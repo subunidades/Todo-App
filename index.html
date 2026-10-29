@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Todos</title>
+  <style>
+:root {
+  --bg: #e9edf1;
+  --surface: #ffffff;
+  --ink: #18222d;
+  --muted: #5b6776;
+  --line: #cfd6de;
+  --accent: #0b6b63;
+  --accent-ink: #ffffff;
+  --danger: #b3261e;
+  --radius: 6px;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11181f;
+    --surface: #19232d;
+    --ink: #e8edf2;
+    --muted: #93a0ae;
+    --line: #2c3a47;
+    --accent: #4fc3b5;
+    --accent-ink: #08201d;
+    --danger: #ff8a80;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 620px; margin: 0 auto; padding: 48px 20px 80px; }
+h1 { font-size: 2.25rem; font-weight: 750; letter-spacing: -0.02em; margin: 0 0 24px; }
+
+#add-form {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+#add-form label { font-weight: 600; font-size: .9rem; }
+input[type="text"], textarea {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  resize: vertical;
+}
+input[type="text"]:focus-visible, textarea:focus-visible, button:focus-visible, .check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.form-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.error { margin: 0; color: var(--danger); font-size: .9rem; min-height: 1.4em; }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+}
+button[type="submit"], button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+button:hover { border-color: var(--muted); }
+
+#filters { display: flex; align-items: center; gap: 6px; margin: 24px 0 12px; }
+#filters button { border-color: transparent; color: var(--muted); }
+#filters button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); font-weight: 600; }
+#count { margin-left: auto; color: var(--muted); font-size: .9rem; }
+
+#list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.todo {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 12px;
+  align-items: start;
+}
+.check {
+  width: 22px; height: 22px; margin-top: 2px;
+  appearance: none;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+  cursor: pointer;
+  display: grid; place-content: center;
+}
+.check:checked { background: var(--accent); border-color: var(--accent); }
+.check:checked::after { content: ""; width: 5px; height: 10px; border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px); }
+.todo-title { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.todo-desc { grid-column: 2; margin: 0; color: var(--muted); font-size: .92rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+.todo-meta { grid-column: 2; color: var(--muted); font-size: .8rem; }
+.todo.done .todo-title { text-decoration: line-through; color: var(--muted); }
+.actions { display: flex; gap: 4px; grid-column: 3; grid-row: 1; }
+.actions button { border-color: transparent; color: var(--muted); padding: 4px 8px; font-size: .9rem; }
+.actions .delete:hover { color: var(--danger); }
+
+.edit-form { grid-column: 2 / 4; display: grid; gap: 8px; }
+.edit-form .form-row { justify-content: flex-end; }
+
+#empty { color: var(--muted); text-align: center; padding: 32px 0; }
+#toast {
+  position: fixed; left: 50%; bottom: 24px;
+  transform: translate(-50%, 20px);
+  background: var(--ink); color: var(--bg);
+  padding: 8px 16px; border-radius: var(--radius);
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Todos</h1>
+
+    <form id="add-form" novalidate>
+      <label for="title">New todo</label>
+      <input id="title" name="title" type="text" autocomplete="off" placeholder="What needs doing?">
+      <textarea id="description" name="description" rows="2" placeholder="Details (optional)"></textarea>
+      <div class="form-row">
+        <p id="form-error" class="error" role="alert"></p>
+        <button type="submit">Add todo</button>
+      </div>
+    </form>
+
+    <nav id="filters" aria-label="Filter todos">
+      <button data-filter="all" aria-pressed="true">All</button>
+      <button data-filter="active" aria-pressed="false">Active</button>
+      <button data-filter="completed" aria-pressed="false">Completed</button>
+      <span id="count"></span>
+    </nav>
+
+    <ul id="list"></ul>
+    <p id="empty" hidden></p>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </main>
+  <script>
+/* ---------- Errors (mirrors AppError in error.rs) ---------- */
+class AppError extends Error {
+  constructor(kind, message) { super(message); this.kind = kind; }
+}
+const NotFound = () => new AppError("NotFound", "Todo not found");
+const ValidationError = (msg) => new AppError("ValidationError", msg);
+
+/* ---------- Domain (mirrors models.rs) ---------- */
+const MAX_TITLE = 255;
+const MAX_DESCRIPTION = 2000;
+
+function validateFields({ title, description }) {
+  if (!title || !title.trim()) throw ValidationError("Title cannot be empty");
+  if (title.length > MAX_TITLE) throw ValidationError(`Title must be ${MAX_TITLE} characters or less`);
+  if (description && description.length > MAX_DESCRIPTION)
+    throw ValidationError(`Description must be ${MAX_DESCRIPTION} characters or less`);
+}
+
+function newTodo(title, description) {
+  const todo = {
+    id: crypto.randomUUID(),
+    title,
+    description: description || null,
+    completed: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  validateFields(todo);
+  return todo;
+}
+
+// Partial update: undefined fields are left unchanged. Passing null clears the description.
+function applyUpdate(todo, changes) {
+  const next = { ...todo };
+  if (changes.title !== undefined) next.title = changes.title;
+  if (changes.description !== undefined) next.description = changes.description || null;
+  if (changes.completed !== undefined) next.completed = changes.completed;
+  validateFields(next);
+  next.updated_at = new Date().toISOString();
+  return next;
+}
+
+/* ---------- Repository (mirrors storage.rs) ---------- */
+// Same interface as the Rust trait. Swap this class for a fetch-based one to talk to a server.
+class LocalStorageRepository {
+  constructor(key = "todos.v1") {
+    this.key = key;
+    this.cache = this.#load();
+  }
+  #load() {
+    try { return JSON.parse(localStorage.getItem(this.key)) || []; }
+    catch { return []; }
+  }
+  #save() {
+    try { localStorage.setItem(this.key, JSON.stringify(this.cache)); }
+    catch { /* storage unavailable: data stays in memory for this session */ }
+  }
+  async create(todo) { this.cache.push(todo); this.#save(); return todo; }
+  async get(id) {
+    const t = this.cache.find((x) => x.id === id);
+    if (!t) throw NotFound();
+    return t;
+  }
+  async list() { return [...this.cache].sort((a, b) => b.created_at.localeCompare(a.created_at)); }
+  async update(todo) {
+    const i = this.cache.findIndex((x) => x.id === todo.id);
+    if (i === -1) throw NotFound();
+    this.cache[i] = todo; this.#save(); return todo;
+  }
+  async delete(id) {
+    const i = this.cache.findIndex((x) => x.id === id);
+    if (i === -1) throw NotFound();
+    this.cache.splice(i, 1); this.#save();
+  }
+}
+
+/* ---------- Service (mirrors the handlers in todos.rs) ---------- */
+const repo = new LocalStorageRepository();
+const api = {
+  create: (title, description) => repo.create(newTodo(title, description)),
+  list: () => repo.list(),
+  update: async (id, changes) => repo.update(applyUpdate(await repo.get(id), changes)),
+  remove: (id) => repo.delete(id),
+};
+
+/* ---------- UI ---------- */
+const $ = (sel) => document.querySelector(sel);
+const listEl = $("#list");
+const emptyEl = $("#empty");
+const countEl = $("#count");
+const formError = $("#form-error");
+const toastEl = $("#toast");
+let filter = "all";
+let editingId = null;
+let toastTimer;
+
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2200);
+}
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+const fmt = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+function renderItem(t) {
+  if (t.id === editingId) return renderEditor(t);
+
+  const check = el("input", { type: "checkbox", className: "check", checked: t.completed });
+  check.setAttribute("aria-label", `Mark "${t.title}" as ${t.completed ? "active" : "completed"}`);
+  check.addEventListener("change", () => run(() => api.update(t.id, { completed: check.checked })));
+
+  const edit = el("button", { type: "button", textContent: "Edit" });
+  edit.addEventListener("click", () => { editingId = t.id; render(); });
+
+  const del = el("button", { type: "button", className: "delete", textContent: "Delete" });
+  del.addEventListener("click", () => run(() => api.remove(t.id), "Todo deleted"));
+
+  const li = el("li", { className: "todo" + (t.completed ? " done" : "") },
+    check,
+    el("p", { className: "todo-title", textContent: t.title }),
+    el("div", { className: "actions" }, edit, del));
+  if (t.description) li.append(el("p", { className: "todo-desc", textContent: t.description }));
+  li.append(el("span", { className: "todo-meta", textContent: `Updated ${fmt(t.updated_at)}` }));
+  return li;
+}
+
+function renderEditor(t) {
+  const title = el("input", { type: "text", value: t.title });
+  title.setAttribute("aria-label", "Title");
+  const desc = el("textarea", { rows: 3, value: t.description || "" });
+  desc.setAttribute("aria-label", "Description");
+  const err = el("p", { className: "error", role: "alert" });
+  const save = el("button", { type: "submit", className: "primary", textContent: "Save changes" });
+  const cancel = el("button", { type: "button", textContent: "Cancel" });
+  cancel.addEventListener("click", () => { editingId = null; render(); });
+
+  const form = el("form", { className: "edit-form", noValidate: true },
+    title, desc, el("div", { className: "form-row" }, err, cancel, save));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api.update(t.id, { title: title.value, description: desc.value });
+      editingId = null; render(); toast("Changes saved");
+    } catch (ex) { err.textContent = ex.message; }
+  });
+  setTimeout(() => title.focus());
+  return el("li", { className: "todo" }, form);
+}
+
+async function render() {
+  const all = await api.list();
+  const visible = all.filter((t) =>
+    filter === "all" ? true : filter === "active" ? !t.completed : t.completed);
+
+  listEl.replaceChildren(...visible.map(renderItem));
+  const left = all.filter((t) => !t.completed).length;
+  countEl.textContent = `${left} active of ${all.length}`;
+
+  emptyEl.hidden = visible.length > 0;
+  emptyEl.textContent = all.length === 0
+    ? "No todos yet. Add your first one above."
+    : `No ${filter} todos.`;
+
+  document.querySelectorAll("#filters button").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.filter === filter)));
+}
+
+async function run(action, message) {
+  try { await action(); await render(); if (message) toast(message); }
+  catch (ex) { toast(ex.message); render(); }
+}
+
+$("#add-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  try {
+    await api.create(form.title.value, form.description.value);
+    form.reset();
+    formError.textContent = "";
+    await render();
+    toast("Todo added");
+    form.title.focus();
+  } catch (ex) { formError.textContent = ex.message; }
+});
+
+$("#filters").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-filter]");
+  if (b) { filter = b.dataset.filter; render(); }
+});
+
+render();
+</script>
+</body>
+</html>
